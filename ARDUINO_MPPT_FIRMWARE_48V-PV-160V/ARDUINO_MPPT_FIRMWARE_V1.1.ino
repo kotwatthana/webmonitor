@@ -80,11 +80,22 @@ firmwareContactR2 = "TechBuilder     ";
 #include <WiFiClient.h>             //SYSTEM PARAMETER  - WiFi Library (By: Arduino)
 #include <LiquidCrystal_I2C.h>      //SYSTEM PARAMETER  - ESP32 LCD Compatible Library (By: Robojax)
 #include <Adafruit_ADS1X15.h>       //SYSTEM PARAMETER  - ADS1115/ADS1015 ADC Library (By: Adafruit)
+#include <ESPAsyncWebServer.h>
+#include <ESPAsyncWiFiManager.h>
+#include <AsyncTCP.h>
+#include <AsyncElegantOTA.h>
+#include <ESPmDNS.h>
+#include "index.h"
+#include <ArduinoJson.h>
 LiquidCrystal_I2C lcd(0x27,16,2);   //SYSTEM PARAMETER  - Configure LCD RowCol Size and I2C Address
 TaskHandle_t Core2;                 //SYSTEM PARAMETER  - Used for the ESP32 dual core operation
 Adafruit_ADS1015 ads;               //SYSTEM PARAMETER  - ADS1015 ADC Library (By: Adafruit) Kindly delete this line if you are using ADS1115
 //Adafruit_ADS1115 ads;             //SYSTEM PARAMETER  - ADS1115 ADC Library (By: Adafruit) Kindly uncomment this if you are using ADS1115
 
+AsyncWebServer server(80);
+DNSServer dns;
+
+String jsonString="";
 //====================================== USER PARAMETERS ===========================================//
 // The parameters below are the default parameters used when the MPPT charger settings have not     //
 // been set or saved through the LCD menu interface or mobile phone WiFi app. Some parameters here  //
@@ -170,7 +181,7 @@ inVoltageDivRatio       = 40.2156,    //  CALIB PARAMETER - Input voltage divide
 outVoltageDivRatio      = 24.5000,    //  CALIB PARAMETER - Output voltage divider sensor ratio (change this value to calibrate voltage sensor)
 vOutSystemMax           = 50.0000,    //  CALIB PARAMETER - 
 cOutSystemMax           = 50.0000,    //  CALIB PARAMETER - 
-ntcResistance           = 9000.00,   //  CALIB PARAMETER - NTC temp sensor's resistance. Change to 10000.00 if you are using a 10k NTC
+ntcResistance           = 10000.00,   //  CALIB PARAMETER - NTC temp sensor's resistance. Change to 10000.00 if you are using a 10k NTC
 voltageDropout          = 1.0000,     //  CALIB PARAMETER - Buck regulator's dropout voltage (DOV is present due to Max Duty Cycle Limit)
 voltageBatteryThresh    = 1.5000,     //  CALIB PARAMETER - Power cuts-off when this voltage is reached (Output V)
 currentInAbsolute       = 31.0000,    //  CALIB PARAMETER - Maximum Input Current The System Can Handle (A - Input)
@@ -292,7 +303,14 @@ secondsElapsed        = 0;           //SYSTEM PARAMETER -
 //=================================================================================================//
 
 //================= CORE0: SETUP (DUAL CORE MODE) =====================//
-
+void coreTwo(void * pvParameters){
+ setupWiFi(); 
+ webmonitor();                                             //TAB#7 - WiFi Initialization
+//================= CORE0: LOOP (DUAL CORE MODE) ======================//
+  while(1){
+    Wireless_Telemetry();                                   //TAB#7 - Wireless telemetry (WiFi & Bluetooth)
+    
+}}
 //================== CORE1: SETUP (DUAL CORE MODE) ====================//
 void setup() { 
   
@@ -301,7 +319,7 @@ void setup() {
   Serial.println("> Serial Initialized");                   //Startup message
   
   //GPIO PIN INITIALIZATION
-  pinMode(currentCharging,OUTPUT);                          
+  pinMode(backflow_MOSFET,OUTPUT);                          
   pinMode(buck_EN,OUTPUT);
   pinMode(LED,OUTPUT); 
   pinMode(FAN,OUTPUT);
@@ -327,6 +345,7 @@ void setup() {
   buck_Disable();
 
   //ENABLE DUAL CORE MULTITASKING
+  xTaskCreatePinnedToCore(coreTwo,"coreTwo",10000,NULL,0,&Core2,0);
   
   //INITIALIZE AND LIOAD FLASH MEMORY DATA
   EEPROM.begin(512);
